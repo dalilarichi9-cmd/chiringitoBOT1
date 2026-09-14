@@ -7,7 +7,7 @@ import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 # =====================================================================
-# LLEVANTAR UN SERVIDOR WEB FALSO PARA RENDER (Evita que el bot se apague)
+# SERVIDOR WEB FALSO PARA RENDER
 # =====================================================================
 def run_dummy_server():
     class DummyHandler(SimpleHTTPRequestHandler):
@@ -17,13 +17,11 @@ def run_dummy_server():
             self.end_headers()
             self.wfile.write(b"Bot activo y funcionando correctamente.")
 
-    # Render asigna automáticamente un puerto en la variable de entorno PORT (suele ser 10000)
     port = int(os.environ.get("PORT", 8080))
     server = HTTPServer(("0.0.0.0", port), DummyHandler)
     print(f" Servidor web falso escuchando en el puerto {port}")
     server.serve_forever()
 
-# Iniciamos el servidor en un hilo secundario para que no bloquee al bot
 threading.Thread(target=run_dummy_server, daemon=True).start()
 # =====================================================================
 
@@ -37,7 +35,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# 3. Configuración de API-Football
+# 3. Configuración de API-Football (URL correcta oficial)
 URL_STANDINGS = "https://api-sports.io"
 HEADERS = {
     'x-rapidapi-host': 'v3.football.api-sports.io',
@@ -55,30 +53,46 @@ async def clasificacion(ctx):
     # ID de LA LIGA = 140 | Temporada 2026
     params = {"league": "140", "season": "2026"}
     
-    response = requests.get(URL_STANDINGS, headers=HEADERS, params=params)
+    # Avisamos al chat de que estamos buscando para evitar impaciencias
+    await ctx.send("📊 Buscando la clasificación de LaLiga... Por favor, espera.")
     
-    if response.status_code == 200:
-        data = response.json()
+    try:
+        response = requests.get(URL_STANDINGS, headers=HEADERS, params=params)
+        print(f"API Status Code: {response.status_code}") # Log en Render
         
-        try:
-            # Navegamos en el JSON para obtener la lista de posiciones
-            # Nota: Aseguramos la estructura habitual de API-Football
-            league_data = data["response"][0]["league"]
-            standings = league_data["standings"][0] # Suele venir como una lista dentro de lista
+        if response.status_code == 200:
+            data = response.json()
             
-            # Crear un mensaje incrustado (Embed) para que se vea ordenada en Discord
+            # Si la API responde pero el token está mal o no hay datos, viene en la sección 'errors'
+            if data.get("errors"):
+                print(f"Errores devueltos por la API: {data['errors']}")
+                await ctx.send(f"❌ Error de la API de fútbol: {data['errors']}")
+                return
+
+            # Verificamos si hay respuesta válida
+            if not data.get("response"):
+                await ctx.send("❌ No se encontraron datos para LaLiga en la temporada especificada.")
+                return
+
+            # Extracción correcta del formato de API-Football
+            # Estructura real: data["response"][0]["league"]["standings"][0] -> Lista de equipos
+            league_info = data["response"][0]["league"]
+            standings = league_info["standings"][0] # La API mete la lista dentro de otra lista
+            
+            # Crear el mensaje incrustado (Embed)
             embed = discord.Embed(
-                title=f"Clasificación de {league_data['name']} (Temporada 2026)",
+                title=f"🏆 Clasificación de {league_info['name']} (Temporada 2026/27)",
                 color=discord.Color.blue()
             )
             
-            if league_data.get('logo'):
-                embed.set_thumbnail(url=league_data['logo'])
+            if league_info.get('logo'):
+                embed.set_thumbnail(url=league_info['logo'])
                 
             tabla_texto = "Pos. | Equipo               | Pts | PJ\n"
             tabla_texto += "---------------------------------------\n"
             
-            for team in standings:
+            # Construimos la tabla línea por línea (Máximo 20 equipos)
+            for team in standings[:20]:
                 rank = str(team['rank']).rjust(4)
                 name = team['team']['name'][:20].ljust(20)
                 points = str(team['points']).ljust(3)
@@ -89,11 +103,12 @@ async def clasificacion(ctx):
             embed.description = f"```\n{tabla_texto}\n```"
             await ctx.send(embed=embed)
             
-        except (IndexError, KeyError) as e:
-            print(f"Error de estructura JSON: {e}")
-            await ctx.send("No se encontraron datos de la tabla clasificatoria en este momento. ⚽")
-    else:
-        await ctx.send("Error al conectar con la API de fútbol. Inténtalo más tarde. ❌")
+        else:
+            await ctx.send(f"❌ Error al conectar con la API de fútbol (Código HTTP: {response.status_code}).")
+            
+    except Exception as e:
+        print(f"Error crítico en el comando: {e}")
+        await ctx.send("❌ Ocurrió un error inesperado al procesar la clasificación.")
 
 # 6. Único punto de ejecución
 bot.run(TOKEN)
