@@ -38,9 +38,9 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # 3. Configuración de API-Football (URL correcta oficial)
 URL_STANDINGS = "https://api-sports.io"
 HEADERS = {
-    'x-rapidapi-host': 'v3.football.api-sports.io',
-    'x-rapidapi-key': FOOTBALL_API_KEY
+    'x-apisports-key': FOOTBALL_API_KEY
 }
+
 
 # 4. Eventos del Bot
 @bot.event
